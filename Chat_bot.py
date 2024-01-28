@@ -1,14 +1,14 @@
 import random
 
-
 from telebot import types, TeleBot, custom_filters
 from telebot.storage import StateMemoryStorage
 from telebot.handler_backends import State, StatesGroup
 
-from BD_engl_rus import World_rus, Add_world, World_engl, Add_trans_world
+from BD_engl_rus import World_rus, User, World_user
 
 import sqlalchemy
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy import update
 
 Base = declarative_base()
 
@@ -16,14 +16,14 @@ Base = declarative_base()
 print('Start telegram bot...')
 
 state_storage = StateMemoryStorage()
-token_bot = '67'
+token_bot = 'token'
 bot = TeleBot(token_bot, state_storage=state_storage)
 
 known_users = []
 userStep = {}
 buttons = []
 
-DSN = "postgresql://postgres:post@localhost:5432/netology_bd"
+DSN = "postgresql://postgres:ps@localhost:5432/netology_bd"
 engine = sqlalchemy.create_engine(DSN)
 # сессия
 Session = sessionmaker(bind=engine)
@@ -31,18 +31,10 @@ session = Session()
 
 n = []
 
-sales_other = Session().query(World_engl).join(World_rus)
-sales= Session().query(Add_trans_world).join(Add_world)
+sales_other = Session().query(World_user).join(World_rus).join(User)
 
 for sale in sales_other:
-    n.append(sale.target_word)
-
-    '''print(
-        f'{sale.world_rus.id} | {sale.world_rus.translate} | {sale.others_world}'
-    )'''
-#print(n)
-for sale in sales:
-    n.append(sale.target_add_word)
+    n.append(sale.world_rus.target_word)
 
     '''print(
         f'{sale.world_rus.id} | {sale.world_rus.translate} | {sale.others_world}'
@@ -50,7 +42,7 @@ for sale in sales:
 print(n)
 list_table = []
 
-#sales = Session().query(World_engl).select_from(World_rus)
+#sales = Session().query(World_engl).select_from(List).join(World_rus)
 for sale in sales_other:
     '''print(
         f'{sale.id} | {sale.target_word} | {sale.world_rus.translate}'
@@ -58,43 +50,20 @@ for sale in sales_other:
     list_other = random.sample(n, 4)
     list_table.append(sale.id)
     list_table.append(sale.world_rus.translate)
-    list_table.append(sale.target_word)
+    list_table.append(sale.world_rus.target_word)
+    #list_table.append(list_other)
 
-
-    '''print(
-        f'{sale.id} | {sale.world_rus.translate} | {sale.target_word} | {list_other}'
-    )'''
     for i in range(0, 4):
-        while list_other[i] == sale.target_word:
+        while list_other[i] == sale.world_rus.target_word:
             list_other = random.sample(n, 4)
     list_table.append(list_other)
+
+print(list_table)
 
 chunk_size = 4
 list_data = [list_table[i:i + chunk_size] for i in range(0, len(list_table), chunk_size)]
-
-b= sale.id
-
-for sale in sales:
-    list_other = random.sample(n, 4)
-    list_table.append(b+sale.id)
-    list_table.append(sale.add_world.add_world)
-    list_table.append(sale.target_add_word)
-
-    for i in range(0, 4):
-        while list_other[i] == sale.target_add_word:
-            list_other = random.sample(n, 4)
-    list_table.append(list_other)
-
-
-#print(list_table)
-
-
-list_data = [list_table[i:i + chunk_size] for i in range(0, len(list_table), chunk_size)]
-
-print(list_data)
-
-b= len(list_data)-1
-print(b)
+print(len(list_data))
+b= len(list_data)
 
 def show_hint(*lines):
     return '\n'.join(lines)
@@ -125,22 +94,33 @@ def get_user_step(uid):
         print("New user detected, who hasn't used \"/start\" yet")
         return 0
 
-
-#k=0
+    
+k=0
 @bot.message_handler(commands=['cards', 'start'])
 def create_cards(message):
 
     cid = message.chat.id
+    user_first_name = str(message.chat.first_name)
+    #new_user1 = User(name_user=user_first_name)
+    session.execute(update(User), {"name_user": user_first_name}, )
+
+    # session.commit()  # фиксируем изменения
+    #
+    # session.add(new_user1)
+    session.commit()  # фиксируем изменения'''
+    # bot.reply_to(message, f"Привет 👋! {user_first_name} \n ")
+
     if cid not in known_users:
         known_users.append(cid)
         userStep[cid] = 0
-        bot.send_message(cid, '''Привет 👋 Давай попрактикуемся в английском языке. Тренировки можешь проходить в удобном для себя темпе.
+        bot.send_message(cid, f'''Привет 👋! {user_first_name}
+            Давай попрактикуемся в английском языке. Тренировки можешь проходить в удобном для себя темпе.
 
-У тебя есть возможность использовать тренажёр, как конструктор, и собирать свою собственную базу для обучения. Для этого воспрользуйся инструментами:
+    У тебя есть возможность использовать тренажёр, как конструктор, и собирать свою собственную базу для обучения. Для этого воспрользуйся инструментами:
 
-добавить слово ➕,
-удалить слово 🔙.
-Ну что, начнём ⬇️''')
+    добавить слово ➕,
+    удалить слово 🔙.
+    Ну что, начнём ⬇️''')
     markup = types.ReplyKeyboardMarkup(row_width=2)
 
     global buttons
@@ -152,7 +132,6 @@ def create_cards(message):
     target_word_btn = types.KeyboardButton(target_word)
     buttons.append(target_word_btn)
     others = list_data[k][3]  # брать из БД
-    print(k)
     other_words_btns = [types.KeyboardButton(word) for word in others]
     buttons.extend(other_words_btns)
     random.shuffle(buttons)
@@ -192,25 +171,16 @@ def delete_word(message):
 
         print(f"Удаляемое слово {data['translate_word']}")
         for sale in sales_other:
-            if data['translate_word'] == sale.world_rus.translate:
+            if sale.world_rus.translate == data['translate_word']:
                 print(sale.world_rus.translate)
                 id_world = sale.id
-                session.query(World_engl).filter(World_engl.id_world_rus == id_world).delete()
-                session.commit()
-                session.query(World_rus).filter(World_rus.id == id_world).delete()
-                session.commit()
+        print(id_world)
 
-        for sale in sales:
-            if data['translate_word'] == sale.add_world.add_world:
-                print(sale.add_world.add_world)
-                add_world = sale.add_world.add_world
-                #print(id_add_world)
+        session.query(World_user).filter(World_user.id_world_rus == id_world).delete()
+        session.commit()
 
-
-                session.query(Add_trans_world).filter(Add_trans_world.target_add_word == sale.target_add_word).delete()
-                session.commit()
-                session.query(Add_world).filter(Add_world.add_world == add_world).delete()
-                session.commit()
+        session.query(World_rus).filter(World_rus.id == id_world).delete()
+        session.commit()
 
     bot.send_message(message.chat.id, hint)
 
@@ -229,14 +199,12 @@ def point1(message):
     cid = message.chat.id
     text = message.text
     print("Слово", text)
-    translate_world1 = Add_world(add_world=text)
+    translate_world1 = World_rus(translate=text, part_speech="сущ.", target_word=None)
     session.add(translate_world1)
     session.commit()  # фиксируем изменения'''
     add_word_translate(message)
-    print(translate_world1.id)
     global id_world_add
     id_world_add = translate_world1.id
-
 
 def add_word_translate(message):
     cid = message.chat.id
@@ -250,13 +218,16 @@ def point2(message):
     cid = message.chat.id
     text = message.text
     print("Перевод", text)
-    engl_translate_world1 = Add_trans_world(target_add_word=text, id_add_world = id_world_add)
-    session.add(engl_translate_world1)
+
+    session.execute(update(World_rus),[{"id": id_world_add, "target_word": text},],)
+
     session.commit()  # фиксируем изменения
+
 
     bot.send_message(message.chat.id,"Добавлено")
     create_cards(message)
-    return
+
+
 
 
 @bot.message_handler(func=lambda message: True, content_types=['text'])
@@ -286,49 +257,6 @@ def message_reply(message):
 
 
 
-'''DSN = "postgresql://postgres:post@localhost:5432/netology_bd"
-engine = sqlalchemy.create_engine(DSN)
-
-# сессия
-Session = sessionmaker(bind=engine)
-session = Session()
-
-
-n=[]
-id_trans = []
-
-sales_other = Session().query(List).join(World_rus).filter(World_rus.id==1)
-
-for sale in sales_other:
-    n.append(sale.others_world)
-
-    print(
-        f'{sale.world_rus.id} | {sale.world_rus.translate} | {sale.others_world}'
-        )
-print(n)
-list_table = []
-
-sales = Session().query(World_engl).select_from(List).join(World_rus)
-for sale in sales:
-    print(
-        f'{sale.id} | {sale.target_word} | {sale.world_rus.translate}'
-    )
-    list_table.append(sale.id)
-    list_table.append(sale.world_rus.translate)
-    list_table.append(sale.target_word)
-    list_table.append(n)
-
-
-
-print(list_table)
-
-chunk_size = 4
-list_data = [list_table[i:i + chunk_size] for i in range(0, len(list_table), chunk_size)]
-print(len(list_data))
-create_cards(translate = list_data[0][1], target_word= list_data[0][2],others =list_data[0][3])
-session.commit()  # фиксируем изменения
-
-session.close()'''
 session.commit()  # фиксируем изменения
 
 session.close()
